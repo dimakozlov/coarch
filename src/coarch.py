@@ -1,11 +1,12 @@
+import sys
 import csv
 import math
 import hashlib
+import argparse
 import statistics
 from collections import defaultdict
 from pathlib import Path
-from dataclasses import dataclass, field
-from sys import platform
+from dataclasses import dataclass
 
 import yaml
 
@@ -30,10 +31,16 @@ class Metrics:
 
         self.frame_size = defaultdict(list)
 
+    @property
+    def empty(self):
+        return not self.codec
+
+
 @dataclass
 class Tool:
     label: str
     cmd: str
+    qp: bool = False
 
     @property
     def md5(self):
@@ -43,29 +50,7 @@ class Tool:
         return m.hexdigest()
 
 
-codec2tool = {
-    'x264Fast': Tool('x264-fast-arc', 'x264 --preset fast --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264Faster': Tool('x264-faster-arc', 'x264 --preset faster --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264Medium': Tool('x264-medium-arc', 'x264 --preset medium --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264Placebo': Tool('x264-placebo-arc', 'x264 --preset placebo --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264Slow': Tool('x264-slow-arc', 'x264 --preset slow --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264Slower': Tool('x264-slower-arc', 'x264 --preset slower --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264SuperFast': Tool('x264-superfast-arc', 'x264 --preset superfast --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264UltraFast': Tool('x264-ultrafast-arc', 'x264 --preset ultrafast --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264VeryFast': Tool('x264-veryfast-arc', 'x264 --preset veryfast --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-    'x264VerySlow': Tool('x264-veryslow-arc', 'x264 --preset veryslow --slices 1 --profile high -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames {frames} --input-res {width}x{height} --no-scenecut --tune psnr -o {encoded} {stream}'),
-
-    'x265Fast': Tool('x265-fast-arc', 'x265 --preset fast --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265Faster': Tool('x265-faster-arc', 'x265 --preset faster --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265Medium': Tool('x265-medium-arc', 'x265 --preset medium --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265Placebo': Tool('x265-placebo-arc', 'x265 --preset placebo --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265Slow': Tool('x265-slow-arc', 'x265 --preset slow --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265Slower': Tool('x265-slower-arc', 'x265 --preset slower --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265SuperFast': Tool('x265-superfast-arc', 'x265 --preset superfast --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265UltraFast': Tool('x265-ultrafast-arc', 'x265 --preset ultrafast --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265VeryFast': Tool('x265-veryfast-arc', 'x265 --preset veryfast --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-    'x265VerySlow': Tool('x265-veryslow-arc', 'x265 --preset veryslow --slices 1 -I 120 -i 120 --min-keyint 120 --fps {framerate} --bitrate {bitrate} --vbv-bufsize {2*bitrate} --vbv-maxrate {bitrate} --vbv-init {1.4*bitrate} --frames 999999 --input-res {width}x{height} --high-tier --level-idc 52 -t psnr -o {encoded} {stream}'),
-}
+codec2tool = {}
 
 def load_csv(src: Path) -> Metrics:
     m = Metrics()
@@ -124,7 +109,10 @@ def generate_yamls(m: Metrics) -> None:
 
         root = Path('.cache')
 
-        tool = codec2tool[m.codec]
+        tool = codec2tool.get(m.codec)
+        if tool is None:
+            sys.exit(f"There is no tool with '{m.codec}' codec defined in the EDC config")
+
         tool_folder = f'{tool.label}.{tool.md5}'
         (root / tool_folder).mkdir(parents=True, exist_ok=True)
         main = root / tool_folder / f'{br}.{m.stream}.yuv.yaml'
@@ -149,9 +137,41 @@ def generate_yamls(m: Metrics) -> None:
             yaml.dump(details_data, f)
 
 if __name__ == '__main__':
-    for csv_file in Path('data').glob('*_x265*.csv'):
-        print(csv_file.name)
+    parser = argparse.ArgumentParser(description=f"COnvertor of ARCH data")
+    parser.add_argument('config', nargs='?', default='edc.yaml',
+                        help='configuration file in yaml format')
+
+    args = parser.parse_args()
+    config = Path(args.config)
+
+    if not config.exists():
+        sys.exit(f"Can't open configuration file: {config}")
+
+    with config.open() as f:
+        cfg = yaml.safe_load(f)
+
+    if 'tools' not in cfg:
+        sys.exit(f"There are no 'tools' section in the configuration file: {config}")
+
+    for tool in cfg['tools']:
+        if 'codec' not in tool:
+            continue
+
+        codec = tool['codec']
+        label = tool['label']
+        if 'command-line' in tool:
+            codec2tool[codec] = Tool(label, tool['command-line'], qp=False)
+        elif 'command-line-cqp' in tool:
+            codec2tool[codec] = Tool(label, tool['command-line'], qp=True)
+
+    if not codec2tool:
+        sys.exit(f"There are no tools in the tools section with 'codec' attribute")
+
+    for csv_file in Path('data').glob('*.csv'):
         m = load_csv(csv_file)
-        generate_yamls(m)
+
+        if not m.empty:
+            print(csv_file.name)
+            generate_yamls(m)
 
 
