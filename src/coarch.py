@@ -62,11 +62,11 @@ def load_csv(src: Path) -> Metrics:
         for row in reader:
             m.codec = row['Codec']
 
-            bitrate = row['Bitrate']
-            m.psnr_y[bitrate].append(float(row['PSNR-Y']))
-            m.psnr_u[bitrate].append(float(row['PSNR-U']))
-            m.psnr_v[bitrate].append(float(row['PSNR-V']))
-            m.frame_size[bitrate].append(int(row['Bytes']))
+            br_or_qp = row['Bitrate'] if 'Bitrate' in row else row['QP']
+            m.psnr_y[br_or_qp].append(float(row['PSNR-Y']))
+            m.psnr_u[br_or_qp].append(float(row['PSNR-U']))
+            m.psnr_v[br_or_qp].append(float(row['PSNR-V']))
+            m.frame_size[br_or_qp].append(int(row['Bytes']))
 
     return m
 
